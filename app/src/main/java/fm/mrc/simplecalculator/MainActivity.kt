@@ -412,6 +412,7 @@ class CalculatorState(
         processed = processed.replace(Regex("\\s+"), "")
 
         expression = processed
+        isResultShown = false
         handleEquals()
     }
 }
