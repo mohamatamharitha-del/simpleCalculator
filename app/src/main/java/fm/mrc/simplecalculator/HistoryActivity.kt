@@ -1,6 +1,5 @@
 package fm.mrc.simplecalculator
 
-import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -52,8 +51,6 @@ fun DateHeader(date: Date) {
     val formatter = remember {
         SimpleDateFormat("EEEE, MMM d, yyyy", Locale.getDefault())
     }
-    val today = Calendar.getInstance()
-    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
 
     val dateText = when {
         android.text.format.DateUtils.isToday(date.time) -> "Today (${formatter.format(date)})"
