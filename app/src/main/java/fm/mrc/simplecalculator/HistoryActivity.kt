@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
@@ -63,7 +64,7 @@ fun DateHeader(date: Date) {
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF2C2C2C))
-            .padding(vertical = 4.dp),
+            .padding(vertical = 8.dp),
         color = Color.White,
         textAlign = TextAlign.Center,
         fontWeight = FontWeight.Bold
@@ -79,18 +80,19 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
     val datePickerState = rememberDatePickerState()
     var showDatePicker by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
-    var groupedHistory by remember { mutableStateOf<Map<Date, List<String>>>(emptyMap()) }
+    var groupedHistory by remember { mutableStateOf<TreeMap<Date, MutableList<String>>>(TreeMap()) }
+    val listState = rememberLazyListState()
 
     fun clearHistory() {
         coroutineScope.launch {
             HistoryManager.clearHistory(context)
-            groupedHistory = emptyMap()
+            groupedHistory = TreeMap()
         }
     }
 
     LaunchedEffect(searchQuery, selectedDate) {
         withContext(Dispatchers.IO) {
-            val history = HistoryManager.loadHistory(context)
+            val history = HistoryManager.loadHistory(context) // Newest first
             val filteredHistory = history.filter { item ->
                 val parts = item.split(";", limit = 2)
                 val timestamp = parts.getOrNull(0)?.toLongOrNull()
@@ -111,8 +113,9 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
                 matchesSearch && matchesDate
             }
 
-            val map = TreeMap<Date, MutableList<String>>(compareByDescending { it })
-            filteredHistory.forEach { item ->
+            val map = TreeMap<Date, MutableList<String>>()
+            // Process filteredHistory (newest first) in reverse to get chronological order [Oldest -> Newest]
+            filteredHistory.reversed().forEach { item ->
                 val parts = item.split(";", limit = 2)
                 val timestamp = parts.getOrNull(0)?.toLongOrNull()
                 val calculation = parts.getOrNull(1)
@@ -130,6 +133,13 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
             }
             withContext(Dispatchers.Main) {
                 groupedHistory = map
+                // Automatically scroll to the bottom to show the latest calculations
+                if (map.isNotEmpty()) {
+                    val totalItemsCount = map.size + map.values.sumOf { it.size }
+                    if (totalItemsCount > 0) {
+                        listState.scrollToItem(totalItemsCount - 1)
+                    }
+                }
             }
         }
     }
@@ -181,8 +191,8 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
             )
         },
         containerColor = Color(0xFF1C1C1C)
-    ) {
-        Column(modifier = Modifier.padding(it)) {
+    ) { paddingValues ->
+        Column(modifier = Modifier.padding(paddingValues)) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -230,25 +240,26 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
             }
 
             LazyColumn(
+                state = listState,
                 modifier = modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.End,
-                reverseLayout = true
+                reverseLayout = false
             ) {
-                groupedHistory.keys.reversed().forEach { date ->
-                    val calculations = groupedHistory[date].orEmpty()
+                groupedHistory.forEach { (date, calculations) ->
                     stickyHeader {
                         DateHeader(date = date)
                     }
-                    items(calculations.reversed()) { calculation ->
+                    items(calculations) { calculation ->
                         Text(
                             text = calculation,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 12.dp),
                             color = Color.White,
-                            textAlign = TextAlign.End
+                            textAlign = TextAlign.End,
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
                 }
