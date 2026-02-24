@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.view.SoundEffectConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -138,6 +140,7 @@ fun formatResult(result: Double): String {
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private lateinit var calculatorState: CalculatorState
+    private var tts: TextToSpeech? = null
 
     private val speechRecognizerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         result ->
@@ -146,6 +149,9 @@ class MainActivity : ComponentActivity() {
             val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             results?.getOrNull(0)?.let {
                 calculatorState.processVoiceInput(it)
+                // Automatically speak the result after voice input
+                val resultText = "The result is ${calculatorState.display}"
+                tts?.speak(resultText, TextToSpeech.QUEUE_FLUSH, null, null)
             }
         } else {
             calculatorState.onVoiceRecognitionError(result.resultCode)
@@ -163,6 +169,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.SUCCESS) {
+                // Handle initialization failure if needed
+            }
+        }
+
         setContent {
             calculatorState = rememberCalculatorState()
             SimpleCalculatorTheme {
@@ -170,12 +183,24 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    CalculatorScreen(calculatorState, onVoiceInput = {
-                        requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                    })
+                    CalculatorScreen(
+                        calculatorState, 
+                        onVoiceInput = {
+                            requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
+                        onSpeakOut = { text ->
+                            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+                        }
+                    )
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
     }
 
     private fun isSpeechRecognizerAvailable(): Boolean {
@@ -503,7 +528,11 @@ fun CalculatorIconButton(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit) {
+fun CalculatorScreen(
+    calculatorState: CalculatorState, 
+    onVoiceInput: () -> Unit,
+    onSpeakOut: (String) -> Unit
+) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
@@ -548,65 +577,101 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Display
-                Card(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1.2f), // Increased weight for display area
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF2C2C2C)
-                    ),
-                    elevation = CardDefaults.cardElevation(
-                        defaultElevation = 12.dp
-                    )
+                        .weight(1.2f)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .verticalScroll(scrollState),
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.Bottom
+                    Card(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF2C2C2C)
+                        ),
+                        elevation = CardDefaults.cardElevation(
+                            defaultElevation = 12.dp
+                        )
                     ) {
-                        val isResult = calculatorState.isResultShown
-                        val expressionColor = if (isResult) Color(0xFFB0B0B0) else Color.White
-                        val displayColor = if (isResult) Color.White else Color(0xFFB0B0B0)
-                        
-                        // Local state to manage font size dynamically based on line count
-                        var currentExpressionSize by remember { mutableStateOf(52.sp) }
-                        
-                        // Reset size when expression is cleared or starts fresh
-                        LaunchedEffect(calculatorState.expression) {
-                            if (calculatorState.expression.isEmpty()) {
-                                currentExpressionSize = 52.sp
-                            }
-                        }
-
-                        val expressionSize = if (isResult) 24.sp else currentExpressionSize
-                        val displaySize = if (isResult) 52.sp else 24.sp
-
-                        Text(
-                            text = calculatorState.expression,
-                            fontSize = expressionSize,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.End,
-                            color = expressionColor,
-                            lineHeight = (expressionSize.value * 1.1).sp,
-                            onTextLayout = { textLayoutResult ->
-                                if (!isResult && textLayoutResult.lineCount > 3 && currentExpressionSize > 24.sp) {
-                                    currentExpressionSize = 24.sp
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                                .verticalScroll(scrollState),
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.Bottom
+                        ) {
+                            val isResult = calculatorState.isResultShown
+                            val expressionColor = if (isResult) Color(0xFFB0B0B0) else Color.White
+                            val displayColor = if (isResult) Color.White else Color(0xFFB0B0B0)
+                            
+                            // Local state to manage font size dynamically based on line count
+                            var currentExpressionSize by remember { mutableStateOf(52.sp) }
+                            
+                            // Reset size when expression is cleared or starts fresh
+                            LaunchedEffect(calculatorState.expression) {
+                                if (calculatorState.expression.isEmpty()) {
+                                    currentExpressionSize = 52.sp
                                 }
                             }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = calculatorState.display,
-                            fontSize = displaySize,
-                            fontWeight = FontWeight.ExtraBold,
-                            textAlign = TextAlign.End,
-                            color = displayColor,
-                            lineHeight = (displaySize.value * 1.1).sp
-                        )
+
+                            val expressionSize = if (isResult) 24.sp else currentExpressionSize
+                            val displaySize = if (isResult) 52.sp else 24.sp
+
+                            Text(
+                                text = calculatorState.expression,
+                                fontSize = expressionSize,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.End,
+                                color = expressionColor,
+                                lineHeight = (expressionSize.value * 1.1).sp,
+                                onTextLayout = { textLayoutResult ->
+                                    if (!isResult && textLayoutResult.lineCount > 3 && currentExpressionSize > 24.sp) {
+                                        currentExpressionSize = 24.sp
+                                    }
+                                }
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = calculatorState.display,
+                                fontSize = displaySize,
+                                fontWeight = FontWeight.ExtraBold,
+                                textAlign = TextAlign.End,
+                                color = displayColor,
+                                lineHeight = (displaySize.value * 1.1).sp
+                            )
+                        }
+                    }
+
+                    // Speak Out / Explain Button near the result
+                    TooltipBox(
+                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Explain button") } },
+                        state = rememberTooltipState(),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val textToSpeak = if (calculatorState.isResultShown) {
+                                    "The result is ${calculatorState.display}"
+                                } else if (calculatorState.display != "0") {
+                                    calculatorState.display
+                                } else {
+                                    "Zero"
+                                }
+                                onSpeakOut(textToSpeak)
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color(0xFF3C3C3C).copy(alpha = 0.6f)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VolumeUp,
+                                contentDescription = "Explain button",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
 
@@ -776,7 +841,7 @@ fun CalculatorPreview() {
             color = MaterialTheme.colorScheme.background
         ) {
             // In preview, we provide a dummy state and onVoiceInput
-            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {})
+            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {}, onSpeakOut = {})
         }
     }
 }
