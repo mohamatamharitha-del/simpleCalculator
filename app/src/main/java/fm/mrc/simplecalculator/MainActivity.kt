@@ -8,12 +8,14 @@ import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
 import android.view.SoundEffectConstants
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,9 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -221,6 +227,7 @@ class MainActivity : ComponentActivity() {
             "100 divided by 4",
             "12 plus 48",
             "90 minus 15",
+            "22 into 25",
             "10 over 2",
             "30 times 5",
             "add 5 to 10",
@@ -391,6 +398,48 @@ class CalculatorState(
     fun processVoiceInput(input: String) {
         var processed = input.lowercase(Locale.getDefault())
             .replace(":", "") // Handle 3:22 -> 322
+            
+            // Multiplication
+            .replace("multiplied by", "×")
+            .replace("multiplied", "×")
+            .replace("multiply", "×")
+            .replace("into", "×")
+            .replace("times", "×")
+            .replace("tines", "×")
+            .replace("product of", "×")
+            .replace("x", "×")
+            .replace("*", "×")
+            
+            // Division
+            .replace("divided by", "÷")
+            .replace("divide by", "÷")
+            .replace("divide", "÷")
+            .replace("over", "÷")
+            .replace("hour", "÷") // misrecognition of "over"
+            .replace("all", "÷")  // misrecognition of "over"
+            .replace("per", "÷")
+            .replace("/", "÷")
+            .replace("by", "÷")
+
+            // Addition
+            .replace("plus", "+")
+            .replace("add", "+")
+            .replace("sum", "+")
+            .replace("and", "+")
+            .replace("increased by", "+")
+            .replace("total of", "+")
+            .replace("bless", "+") // misrecognition of "plus"
+            
+            // Subtraction
+            .replace("minus", "-")
+            .replace("mines", "-") // misrecognition of "minus"
+            .replace("subtract", "-")
+            .replace("take away", "-")
+            .replace("less", "-")
+            .replace("decreased by", "-")
+            .replace("difference of", "-")
+
+            // Numbers
             .replace("one", "1")
             .replace("two", "2")
             .replace("to", "2")
@@ -403,38 +452,8 @@ class CalculatorState(
             .replace("eight", "8")
             .replace("nine", "9")
             .replace("zero", "0")
-            
-            // Addition
-            .replace("plus", "+")
-            .replace("add", "+")
-            .replace("sum", "+")
-            .replace("and", "+")
-            
-            // Subtraction
-            .replace("minus", "-")
-            .replace("subtract", "-")
-            .replace("take away", "-")
-            .replace("less", "-")
-            
-            // Multiplication
-            .replace("times", "×")
-            .replace("x", "×")
-            .replace("multiplied by", "×")
-            .replace("multiplied", "×")
-            .replace("into", "×")
-            .replace("*", "×")
-            
-            // Division
-            .replace("divided by", "÷")
-            .replace("divide by", "÷")
-            .replace("divide", "÷")
-            .replace("over", "÷")
-            .replace("/", "÷")
-            .replace("by", "÷")
 
-        // Handle cases like "add 5 to 10" which results in "+ 5 2 10" (because of 'to' -> '2')
-        // Or "subtract 20 from 50"
-        // Let's refine the regex split later if needed. For now, just strip extra spaces.
+        // Strip extra spaces
         processed = processed.replace(Regex("\\s+"), "")
 
         expression = processed
@@ -536,6 +555,8 @@ fun CalculatorScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val clipboardManager = LocalClipboardManager.current
+    val haptic = LocalHapticFeedback.current
 
     // Auto-scroll to bottom when expression or display changes
     LaunchedEffect(calculatorState.expression, calculatorState.display) {
@@ -649,7 +670,15 @@ fun CalculatorScreen(
                                 fontWeight = FontWeight.ExtraBold,
                                 textAlign = TextAlign.End,
                                 color = displayColor,
-                                lineHeight = (displaySize.value * 1.1).sp
+                                lineHeight = (displaySize.value * 1.1).sp,
+                                modifier = Modifier.combinedClickable(
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        clipboardManager.setText(AnnotatedString(calculatorState.display))
+                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    },
+                                    onClick = {}
+                                )
                             )
                         }
                     }
