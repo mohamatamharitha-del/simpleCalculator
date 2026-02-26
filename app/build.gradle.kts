@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 // Read the local.properties file
@@ -11,6 +12,13 @@ val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
+}
+
+// Read the version.properties file
+val versionProperties = Properties()
+val versionPropertiesFile = rootProject.file("version.properties")
+if (versionPropertiesFile.exists()) {
+    versionProperties.load(versionPropertiesFile.inputStream())
 }
 
 android {
@@ -21,8 +29,8 @@ android {
         applicationId = "fm.mrc.simplecalculator"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = libs.versions.app.versionCode.get().toInt()
-        versionName = libs.versions.app.versionName.get()
+        versionCode = versionProperties.getProperty("versionCode")?.toInt() ?: libs.versions.app.versionCode.get().toInt()
+        versionName = versionProperties.getProperty("versionName") ?: libs.versions.app.versionName.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -65,6 +73,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.generativeai)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
     implementation("androidx.compose.animation:animation-core")
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.foundation:foundation")

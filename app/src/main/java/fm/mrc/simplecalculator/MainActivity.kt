@@ -47,6 +47,9 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import fm.mrc.simplecalculator.database.AppDatabase
+import fm.mrc.simplecalculator.database.HistoryItem
+import fm.mrc.simplecalculator.database.HistoryRepository
 import fm.mrc.simplecalculator.ui.theme.SimpleCalculatorTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,21 +64,46 @@ object HistoryManager {
     private const val PREFS_NAME = "CalculatorPrefs"
     private const val SEPARATOR = "|||"
 
-    suspend fun saveHistory(context: Context, history: List<String>) = withContext(Dispatchers.IO) {
+    private var repository: HistoryRepository? = null
+
+    fun getRepository(context: Context): HistoryRepository {
+        return repository ?: synchronized(this) {
+            val dao = AppDatabase.getDatabase(context).historyDao()
+            val repo = HistoryRepository(dao)
+            repository = repo
+            repo
+        }
+    }
+
+    suspend fun checkAndMigrate(context: Context) = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val historyString = history.joinToString(SEPARATOR)
-        prefs.edit { putString(HISTORY_KEY, historyString) }
+        val historyString = prefs.getString(HISTORY_KEY, null)
+        if (historyString != null) {
+            val repo = getRepository(context)
+            val items = historyString.split(SEPARATOR).filter { it.isNotEmpty() }
+            items.forEach { item ->
+                val parts = item.split(";", limit = 2)
+                val timestamp = parts.getOrNull(0)?.toLongOrNull() ?: System.currentTimeMillis()
+                val calculation = parts.getOrNull(1) ?: item
+                repo.insert(HistoryItem(timestamp = timestamp, calculation = calculation))
+            }
+            prefs.edit { remove(HISTORY_KEY) }
+        }
+    }
+
+    suspend fun saveHistory(context: Context, calculation: String) = withContext(Dispatchers.IO) {
+        val repo = getRepository(context)
+        repo.insert(HistoryItem(timestamp = System.currentTimeMillis(), calculation = calculation))
     }
 
     suspend fun loadHistory(context: Context): List<String> = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val historyString = prefs.getString(HISTORY_KEY, null)
-        historyString?.split(SEPARATOR)?.filter { it.isNotEmpty() } ?: emptyList()
+        // This is now handled by Flow in ViewModel/State, but keeping for compatibility
+        emptyList()
     }
 
     suspend fun clearHistory(context: Context) = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit { remove(HISTORY_KEY) }
+        val repo = getRepository(context)
+        repo.deleteAll()
     }
 }
 
@@ -277,17 +305,18 @@ class CalculatorState(
 ) {
     var display by mutableStateOf("0")
     var expression by mutableStateOf("")
-    var history by mutableStateOf<List<String>>(emptyList())
     var isResultShown by mutableStateOf(false)
 
     init {
-        reloadHistory()
+        coroutineScope.launch {
+            HistoryManager.checkAndMigrate(context)
+        }
     }
 
     fun reloadHistory() {
-        coroutineScope.launch {
-            history = HistoryManager.loadHistory(context)
-        }
+        // History is now observed directly in the UI if needed, 
+        // or can be fetched if we maintain a local list.
+        // For simplicity, we'll let HistoryActivity handle its own observation.
     }
 
     private fun updateDisplayWithResult() {
@@ -324,11 +353,8 @@ class CalculatorState(
         val result = evaluateExpression(expression)
         val resultString = formatResult(result)
         val calculationString = "$expression=$resultString"
-        val newHistoryItemWithDate = "${System.currentTimeMillis()};$calculationString"
-        val newHistory = listOf(newHistoryItemWithDate) + history
-        history = newHistory
         coroutineScope.launch {
-            HistoryManager.saveHistory(context, newHistory)
+            HistoryManager.saveHistory(context, calculationString)
         }
 
         expression = calculationString 
