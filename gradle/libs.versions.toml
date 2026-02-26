@@ -1,6 +1,6 @@
 [versions]
-agp = "9.0.0"
-kotlin = "2.2.10"
+agp = "8.7.3"
+kotlin = "2.0.21"
 composeBom = "2024.09.00"
 android-desugar-jdk-libs = "2.0.4"
 coreKtx = "1.10.1"
@@ -9,8 +9,15 @@ junitVersion = "1.1.5"
 espressoCore = "3.5.1"
 lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
-generativeai = "0.6.0" # Updated Gemini SDK version
+generativeai = "0.6.0"
 material-icons-extended = "1.6.8"
+# App Versioning
+app-versionCode = "1"
+app-versionName = "1.0.0"
+# SDK Versions
+compileSdk = "36"
+targetSdk = "36"
+minSdk = "24"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
