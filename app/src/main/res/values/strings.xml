@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">simpleCalculator</string>
     <string name="title_activity_history">History</string>
+    <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_policy_content">This application is designed with user privacy in mind. We do not collect, store, or share any personal information.\n\n1. Audio Recording\nThe app uses the RECORD_AUDIO permission to provide the voice-to-calculation feature. It is processed by the device system speech recognition service. This app does not record, store, or transmit your audio data to its own servers.\n\n2. Internet Access\nThe app uses the INTERNET permission to support the system speech recognition service.\n\n3. Calculation History\nThe app stores your calculation history locally on your device for your review. This data is not synchronized with any cloud services. You can clear your history at any time.\n\n4. Clipboard\nThe app allows you to copy calculation results to your clipboard locally.\n\nData Security\nAll data is either processed in real-time or stored locally on your device.</string>
 </resources>

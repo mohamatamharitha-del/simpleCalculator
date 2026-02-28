@@ -12,6 +12,7 @@
     </queries>
 
     <application
+        android:name=".CalculatorApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -21,6 +22,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SimpleCalculator"
         tools:targetApi="31">
+        <activity
+            android:name=".ui.CrashActivity"
+            android:exported="false"
+            android:label="Error"
+            android:theme="@style/Theme.SimpleCalculator" />
         <activity
             android:name=".HistoryActivity"
             android:exported="false"

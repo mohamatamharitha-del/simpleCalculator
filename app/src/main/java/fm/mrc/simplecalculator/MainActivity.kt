@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+<<<<<<< Updated upstream
+=======
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+>>>>>>> Stashed changes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -272,6 +278,7 @@ class CalculatorState(
     var expression by mutableStateOf("")
     var history by mutableStateOf<List<String>>(emptyList())
     var isResultShown by mutableStateOf(false)
+    var showPrivacyPolicy by mutableStateOf(false)
 
     init {
         reloadHistory()
@@ -443,11 +450,13 @@ class CalculatorState(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CalculatorButton(
     text: String,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     backgroundColor: Color? = null,
     textColor: Color? = null
 ) {
@@ -457,27 +466,32 @@ fun CalculatorButton(
     val buttonTextColor = textColor ?: defaultTextColor
     val view = LocalView.current
 
-    Button(
-        onClick = {
-            view.playSoundEffect(SoundEffectConstants.CLICK)
-            onClick()
-        },
+    Surface(
         modifier = modifier.height(78.dp),
         shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = buttonBgColor
-        ),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 8.dp,
-            pressedElevation = 4.dp
-        )
+        color = buttonBgColor,
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp
     ) {
-        Text(
-            text = text,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = buttonTextColor
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .combinedClickable(
+                    onClick = {
+                        view.playSoundEffect(SoundEffectConstants.CLICK)
+                        onClick()
+                    },
+                    onLongClick = onLongClick
+                )
+        ) {
+            Text(
+                text = text,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = buttonTextColor
+            )
+        }
     }
 }
 
@@ -554,18 +568,23 @@ fun CalculatorScreen(
                                 .size(32.dp)
                                 .padding(end = 8.dp)
                         )
-                        Text("Calculator")
+                        Text(
+                            text = "Calculator",
+                            modifier = Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = {
+                                    throw RuntimeException("Test Crash: Manual crash triggered for verification")
+                                }
+                            )
+                        )
                     }
                 },
                 actions = {
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = { PlainTooltip { Text("History for calculator user") } },
-                        state = rememberTooltipState()
-                    ) {
-                        IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
-                            Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
-                        }
+                    IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
+                        Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
+                    }
+                    IconButton(onClick = { calculatorState.showPrivacyPolicy = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "Privacy Policy", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -728,17 +747,33 @@ fun CalculatorScreen(
                         CalculatorButton(
                             text = "7",
                             modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("7") }
+                            onClick = { calculatorState.handleNumberInput("7") },
+                            onLongClick = { 
+                                // Arithmetic Exception (Integer divide by zero)
+                                val x = 1 / 0 
+                            }
                         )
                         CalculatorButton(
                             text = "8",
                             modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("8") }
+                            onClick = { calculatorState.handleNumberInput("8") },
+                            onLongClick = {
+                                // Null Pointer Exception
+                                val string: String? = null
+                                println(string!!.length)
+                            }
                         )
                         CalculatorButton(
                             text = "9",
                             modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("9") }
+                            onClick = { calculatorState.handleNumberInput("9") },
+                            onLongClick = {
+                                // Background Thread Exception
+                                @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                                kotlinx.coroutines.GlobalScope.launch {
+                                    throw RuntimeException("Background Thread Crash")
+                                }
+                            }
                         )
                         CalculatorButton(
                             text = "×",
@@ -837,10 +872,48 @@ fun CalculatorScreen(
                             textColor = Color.White
                         )
                     }
-                }
             }
         }
     }
+
+    if (calculatorState.showPrivacyPolicy) {
+        PrivacyPolicyDialog(onDismiss = { calculatorState.showPrivacyPolicy = false })
+    }
+}
+}
+
+@Composable
+fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Text(
+                text = stringResource(id = R.string.privacy_policy_title),
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            ) 
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(id = R.string.privacy_policy_content),
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 16.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color(0xFF2196F3), fontWeight = FontWeight.Bold)
+            }
+        },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = Color(0xFF2C2C2C)
+    )
 }
 
 @Preview(showBackground = true, showSystemUi = true)
@@ -852,7 +925,11 @@ fun CalculatorPreview() {
             color = MaterialTheme.colorScheme.background
         ) {
             // In preview, we provide a dummy state and onVoiceInput
-            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {}, onSpeakOut = {})
+            CalculatorScreen(
+                calculatorState = rememberCalculatorState(),
+                onVoiceInput = {},
+                onSpeakOut = { _ -> }
+            )
         }
     }
 }
