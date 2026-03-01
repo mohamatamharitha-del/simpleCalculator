@@ -33,6 +33,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TreeMap
+import fm.mrc.simplecalculator.database.HistoryItem
 
 class HistoryActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -81,53 +82,48 @@ fun HistoryScreen(modifier: Modifier = Modifier, onBack: () -> Unit, coroutineSc
     var groupedHistory by remember { mutableStateOf<TreeMap<Date, MutableList<String>>>(TreeMap()) }
     val listState = rememberLazyListState()
 
+    val repository = remember { HistoryManager.getRepository(context) }
+    val historyItems by if (searchQuery.isEmpty()) {
+        repository.allHistory.collectAsState(initial = emptyList())
+    } else {
+        repository.searchHistory(searchQuery).collectAsState(initial = emptyList())
+    }
+
     fun clearHistory() {
         coroutineScope.launch {
             HistoryManager.clearHistory(context)
-            groupedHistory = TreeMap()
         }
     }
 
-    LaunchedEffect(searchQuery, selectedDate) {
+    LaunchedEffect(historyItems, selectedDate) {
         withContext(Dispatchers.IO) {
-            val history = HistoryManager.loadHistory(context) // Newest first
-            val filteredHistory = history.filter { item ->
-                val parts = item.split(";", limit = 2)
-                val timestamp = parts.getOrNull(0)?.toLongOrNull()
-                val calculation = parts.getOrNull(1)
-
-                val matchesSearch = calculation?.contains(searchQuery, ignoreCase = true) ?: false
-
-                val matchesDate = if (timestamp != null && selectedDate != null) {
+            val filteredHistory = historyItems.filter { item ->
+                val matchesDate = if (selectedDate != null) {
                     val calendar = Calendar.getInstance()
-                    calendar.timeInMillis = timestamp
+                    calendar.timeInMillis = item.timestamp
                     val selectedCal = Calendar.getInstance().apply { time = selectedDate!! }
                     calendar.get(Calendar.YEAR) == selectedCal.get(Calendar.YEAR) &&
                             calendar.get(Calendar.DAY_OF_YEAR) == selectedCal.get(Calendar.DAY_OF_YEAR)
                 } else {
-                    selectedDate == null
+                    true
                 }
-
-                matchesSearch && matchesDate
+                matchesDate
             }
 
             val map = TreeMap<Date, MutableList<String>>()
-            // Process filteredHistory (newest first) in reverse to get chronological order [Oldest -> Newest]
+            // historyItems is already newest first (ordered by timestamp DESC in DAO)
+            // Process in reverse to get chronological order for sticky headers [Oldest -> Newest]
             filteredHistory.reversed().forEach { item ->
-                val parts = item.split(";", limit = 2)
-                val timestamp = parts.getOrNull(0)?.toLongOrNull()
-                val calculation = parts.getOrNull(1)
-                if (timestamp != null && calculation != null) {
-                    val cal = Calendar.getInstance().apply {
-                        timeInMillis = timestamp
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    val date = cal.time
-                    map.getOrPut(date) { mutableListOf() }.add(calculation)
+                val calculation = item.calculation
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = item.timestamp
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
                 }
+                val date = cal.time
+                map.getOrPut(date) { mutableListOf() }.add(calculation)
             }
             withContext(Dispatchers.Main) {
                 groupedHistory = map
