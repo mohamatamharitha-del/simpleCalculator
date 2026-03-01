@@ -6,11 +6,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.view.SoundEffectConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,13 +19,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.History
-<<<<<<< Updated upstream
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.VolumeUp
-=======
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
->>>>>>> Stashed changes
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,10 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-<<<<<<< Updated upstream
-=======
 import androidx.compose.ui.res.stringResource
->>>>>>> Stashed changes
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,7 +40,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import fm.mrc.simplecalculator.R
-import fm.mrc.simplecalculator.utils.CrashHandler
 import fm.mrc.simplecalculator.ui.theme.SimpleCalculatorTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -57,7 +49,6 @@ import kotlin.random.Random
 
 fun evaluateExpression(expression: String): Double {
     try {
-        // Strip trailing non-digit/parenthesis characters to handle partial expressions like "2+"
         val sanitizedExpression = expression.replace(Regex("[^0-9.]+$"), "")
         if (sanitizedExpression.isEmpty()) return 0.0
 
@@ -76,7 +67,7 @@ fun evaluateExpression(expression: String): Double {
                     if (values.size >= 2) {
                         values.push(applyOp(ops.pop(), values.pop(), values.pop()))
                     } else {
-                        ops.pop() // Discard invalid operator if stack insufficient
+                        ops.pop()
                     }
                 }
                 ops.push(token[0])
@@ -121,12 +112,11 @@ fun formatResult(result: Double): String {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private lateinit var calculatorState: CalculatorState
+    private var tts: TextToSpeech? = null
 
-    private val speechRecognizerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        result ->
+    private val speechRecognizerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val data: Intent? = result.data
             val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
@@ -138,8 +128,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        isGranted: Boolean ->
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
         if (isGranted) {
             launchSpeechRecognizer()
         } else {
@@ -149,7 +138,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-<<<<<<< Updated upstream
         
         tts = TextToSpeech(this) { status ->
             if (status != TextToSpeech.SUCCESS) {
@@ -157,8 +145,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-=======
->>>>>>> Stashed changes
         setContent {
             calculatorState = rememberCalculatorState()
             SimpleCalculatorTheme {
@@ -166,9 +152,15 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    CalculatorScreen(calculatorState, onVoiceInput = {
-                        requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                    })
+                    CalculatorScreen(
+                        calculatorState = calculatorState, 
+                        onVoiceInput = {
+                            requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
+                        onSpeakOut = { text ->
+                            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+                        }
+                    )
                 }
             }
         }
@@ -190,11 +182,7 @@ class MainActivity : ComponentActivity() {
             "25 multiplied by 45",
             "100 divided by 4",
             "12 plus 48",
-            "90 minus 15",
-            "10 over 2",
-            "30 times 5",
-            "add 5 to 10",
-            "subtract 20 from 50"
+            "90 minus 15"
         )
         val randomExample = examples[Random.nextInt(examples.size)]
         val prompt = "Speak now\nEg: \"$randomExample\""
@@ -207,8 +195,14 @@ class MainActivity : ComponentActivity() {
         try {
             speechRecognizerLauncher.launch(intent)
         } catch (_: Exception) {
-            calculatorState.onVoiceRecognitionError(0) // Generic error
+            calculatorState.onVoiceRecognitionError(0)
         }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
     }
 }
 
@@ -269,13 +263,11 @@ class CalculatorState(
 
     fun handleOperator(op: String) {
         if (isResultShown) {
-            // Use the previous result from the expression "2+3=5" as the start of the new expression
             val lastResult = expression.split("=").lastOrNull() ?: "0"
             expression = lastResult
             isResultShown = false
         }
         if (expression.isNotEmpty() && expression.last().toString().matches(Regex("[+×÷-]"))) {
-
              expression = expression.dropLast(1)
         }
         expression += op
@@ -293,10 +285,8 @@ class CalculatorState(
         coroutineScope.launch {
             HistoryManager.saveHistory(context, newHistory)
         }
-
         expression = calculationString 
         display = resultString         
-
         isResultShown = true
     }
 
@@ -311,7 +301,6 @@ class CalculatorState(
              expression = "0"
              isResultShown = false
         }
-        // Check last number segment
         val lastNumber = expression.split(Regex("[+×÷-]")).lastOrNull() ?: ""
         if (!lastNumber.contains(".")) {
              if (expression.isEmpty()) expression = "0"
@@ -360,53 +349,19 @@ class CalculatorState(
 
     fun processVoiceInput(input: String) {
         var processed = input.lowercase(Locale.getDefault())
-            .replace(":", "") // Handle 3:22 -> 322
-            .replace("one", "1")
-            .replace("two", "2")
-            .replace("to", "2")
-            .replace("three", "3")
-            .replace("four", "4")
-            .replace("for", "4")
-            .replace("five", "5")
-            .replace("six", "6")
-            .replace("seven", "7")
-            .replace("eight", "8")
-            .replace("nine", "9")
-            .replace("zero", "0")
-            
-            // Addition
-            .replace("plus", "+")
-            .replace("add", "+")
-            .replace("sum", "+")
-            .replace("and", "+")
-            
-            // Subtraction
-            .replace("minus", "-")
-            .replace("subtract", "-")
-            .replace("take away", "-")
-            .replace("less", "-")
-            
-            // Multiplication
-            .replace("times", "×")
-            .replace("x", "×")
-            .replace("multiplied by", "×")
-            .replace("multiplied", "×")
-            .replace("into", "×")
-            .replace("*", "×")
-            
-            // Division
-            .replace("divided by", "÷")
-            .replace("divide by", "÷")
-            .replace("divide", "÷")
-            .replace("over", "÷")
-            .replace("/", "÷")
-            .replace("by", "÷")
+            .replace(":", "")
+            .replace("one", "1").replace("two", "2").replace("to", "2")
+            .replace("three", "3").replace("four", "4").replace("for", "4")
+            .replace("five", "5").replace("six", "6").replace("seven", "7")
+            .replace("eight", "8").replace("nine", "9").replace("zero", "0")
+            .replace("plus", "+").replace("add", "+").replace("sum", "+").replace("and", "+")
+            .replace("minus", "-").replace("subtract", "-").replace("take away", "-").replace("less", "-")
+            .replace("times", "×").replace("x", "×").replace("multiplied by", "×").replace("multiplied", "×")
+            .replace("into", "×").replace("*", "×")
+            .replace("divided by", "÷").replace("divide by", "÷").replace("divide", "÷")
+            .replace("over", "÷").replace("/", "÷").replace("by", "÷")
 
-        // Handle cases like "add 5 to 10" which results in "+ 5 2 10" (because of 'to' -> '2')
-        // Or "subtract 20 from 50"
-        // Let's refine the regex split later if needed. For now, just strip extra spaces.
         processed = processed.replace(Regex("\\s+"), "")
-
         expression = processed
         handleEquals()
     }
@@ -420,10 +375,8 @@ fun CalculatorButton(
     backgroundColor: Color? = null,
     textColor: Color? = null
 ) {
-    val defaultBackgroundColor = Color(0xFF3C3C3C)
-    val defaultTextColor = Color.White
-    val buttonBgColor = backgroundColor ?: defaultBackgroundColor
-    val buttonTextColor = textColor ?: defaultTextColor
+    val buttonBgColor = backgroundColor ?: Color(0xFF3C3C3C)
+    val buttonTextColor = textColor ?: Color.White
     val view = LocalView.current
 
     Button(
@@ -433,20 +386,10 @@ fun CalculatorButton(
         },
         modifier = modifier.height(78.dp),
         shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = buttonBgColor
-        ),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 8.dp,
-            pressedElevation = 4.dp
-        )
+        colors = ButtonDefaults.buttonColors(containerColor = buttonBgColor),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 4.dp)
     ) {
-        Text(
-            text = text,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = buttonTextColor
-        )
+        Text(text = text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = buttonTextColor)
     }
 }
 
@@ -459,10 +402,8 @@ fun CalculatorIconButton(
     backgroundColor: Color? = null,
     tint: Color? = null
 ) {
-    val defaultBackgroundColor = Color(0xFF3C3C3C)
-    val defaultTint = Color.White
-    val buttonBgColor = backgroundColor ?: defaultBackgroundColor
-    val iconTint = tint ?: defaultTint
+    val buttonBgColor = backgroundColor ?: Color(0xFF3C3C3C)
+    val iconTint = tint ?: Color.White
     val view = LocalView.current
 
     Button(
@@ -472,20 +413,10 @@ fun CalculatorIconButton(
         },
         modifier = modifier.height(78.dp),
         shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = buttonBgColor
-        ),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 8.dp,
-            pressedElevation = 4.dp
-        )
+        colors = ButtonDefaults.buttonColors(containerColor = buttonBgColor),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 4.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = iconTint,
-            modifier = Modifier.size(26.dp)
-        )
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(26.dp))
     }
 }
 
@@ -495,23 +426,12 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(stringResource(id = R.string.privacy_policy_title)) },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = stringResource(id = R.string.privacy_policy_content),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp
-                )
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(text = stringResource(id = R.string.privacy_policy_content), fontSize = 14.sp, lineHeight = 20.sp)
             }
         },
         confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = { throw RuntimeException("Manual Test Crash triggered by user") }) {
                     Text("Test Crash", color = Color(0xFFD32F2F))
                 }
@@ -529,7 +449,11 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit) {
+fun CalculatorScreen(
+    calculatorState: CalculatorState, 
+    onVoiceInput: () -> Unit,
+    onSpeakOut: (String) -> Unit
+) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showPrivacyPolicy by remember { mutableStateOf(false) }
@@ -538,7 +462,6 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
         PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
     }
 
-    // Auto-scroll to bottom when expression or display changes
     LaunchedEffect(calculatorState.expression, calculatorState.display) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
@@ -548,22 +471,11 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
             TopAppBar(
                 title = { Text("Calculator") },
                 actions = {
-<<<<<<< Updated upstream
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = { PlainTooltip { Text("History for calculator user") } },
-                        state = rememberTooltipState()
-                    ) {
-                        IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
-                            Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
-                        }
-=======
                     IconButton(onClick = { showPrivacyPolicy = true }) {
                         Icon(Icons.Default.Info, contentDescription = "Privacy Policy", tint = Color.White)
                     }
                     IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
                         Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
->>>>>>> Stashed changes
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -573,63 +485,28 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
                 )
             )
         },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF1C1C1C))
-                .padding(it)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp), // Slightly reduced padding to save space
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Display
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1C1C1C)).padding(padding)) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1.2f), // Increased weight for display area
+                    modifier = Modifier.fillMaxWidth().weight(1.2f),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF2C2C2C)
-                    ),
-                    elevation = CardDefaults.cardElevation(
-                        defaultElevation = 12.dp
-                    )
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
                 ) {
-<<<<<<< Updated upstream
-                    Card(
-                        modifier = Modifier.fillMaxSize(),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color(0xFF2C2C2C)
-                        ),
-                        elevation = CardDefaults.cardElevation(
-                            defaultElevation = 12.dp
-                        )
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 20.dp, vertical = 12.dp)
-                                .verticalScroll(scrollState),
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp).verticalScroll(scrollState),
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.Bottom
                         ) {
                             val isResult = calculatorState.isResultShown
                             val expressionColor = if (isResult) Color(0xFFB0B0B0) else Color.White
                             val displayColor = if (isResult) Color.White else Color(0xFFB0B0B0)
-                            
-                            // Local state to manage font size dynamically based on line count
                             var currentExpressionSize by remember { mutableStateOf(52.sp) }
-                            
-                            // Reset size when expression is cleared or starts fresh
+
                             LaunchedEffect(calculatorState.expression) {
-                                if (calculatorState.expression.isEmpty()) {
-                                    currentExpressionSize = 52.sp
-                                }
+                                if (calculatorState.expression.isEmpty()) currentExpressionSize = 52.sp
                             }
 
                             val expressionSize = if (isResult) 24.sp else currentExpressionSize
@@ -641,12 +518,7 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.End,
                                 color = expressionColor,
-                                lineHeight = (expressionSize.value * 1.1).sp,
-                                onTextLayout = { textLayoutResult ->
-                                    if (!isResult && textLayoutResult.lineCount > 3 && currentExpressionSize > 24.sp) {
-                                        currentExpressionSize = 24.sp
-                                    }
-                                }
+                                onTextLayout = { if (!isResult && it.lineCount > 3 && currentExpressionSize > 24.sp) currentExpressionSize = 24.sp }
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
@@ -654,243 +526,53 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
                                 fontSize = displaySize,
                                 fontWeight = FontWeight.ExtraBold,
                                 textAlign = TextAlign.End,
-                                color = displayColor,
-                                lineHeight = (displaySize.value * 1.1).sp
+                                color = displayColor
                             )
                         }
-                    }
 
-                    // Speak Out / Explain Button near the result
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = { PlainTooltip { Text("Explain button") } },
-                        state = rememberTooltipState(),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(12.dp)
-                    ) {
+                        // Explain / Speak Out Button
                         IconButton(
                             onClick = {
-                                val textToSpeak = if (calculatorState.isResultShown) {
-                                    "The result is ${calculatorState.display}"
-                                } else if (calculatorState.display != "0") {
-                                    calculatorState.display
-                                } else {
-                                    "Zero"
-                                }
-                                onSpeakOut(textToSpeak)
+                                val text = if (calculatorState.isResultShown) "The result is ${calculatorState.display}" else if (calculatorState.display != "0") calculatorState.display else "Zero"
+                                onSpeakOut(text)
                             },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color(0xFF3C3C3C).copy(alpha = 0.6f)
-                            )
+                            modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                            colors = IconButtonDefaults.iconButtonColors(containerColor = Color(0xFF3C3C3C).copy(alpha = 0.6f))
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Explain button",
-                                tint = Color.White
-                            )
-=======
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .verticalScroll(scrollState),
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.Bottom
-                    ) {
-                        val isResult = calculatorState.isResultShown
-                        val expressionColor = if (isResult) Color(0xFFB0B0B0) else Color.White
-                        val displayColor = if (isResult) Color.White else Color(0xFFB0B0B0)
-                        
-                        // Local state to manage font size dynamically based on line count
-                        var currentExpressionSize by remember { mutableStateOf(52.sp) }
-                        
-                        // Reset size when expression is cleared or starts fresh
-                        LaunchedEffect(calculatorState.expression) {
-                            if (calculatorState.expression.isEmpty()) {
-                                currentExpressionSize = 52.sp
-                            }
->>>>>>> Stashed changes
+                            Icon(imageVector = Icons.Default.VolumeUp, contentDescription = "Speak Out", tint = Color.White)
                         }
-
-                        val expressionSize = if (isResult) 24.sp else currentExpressionSize
-                        val displaySize = if (isResult) 52.sp else 24.sp
-
-                        Text(
-                            text = calculatorState.expression,
-                            fontSize = expressionSize,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.End,
-                            color = expressionColor,
-                            lineHeight = (expressionSize.value * 1.1).sp,
-                            onTextLayout = { textLayoutResult ->
-                                if (!isResult && textLayoutResult.lineCount > 3 && currentExpressionSize > 24.sp) {
-                                    currentExpressionSize = 24.sp
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = calculatorState.display,
-                            fontSize = displaySize,
-                            fontWeight = FontWeight.ExtraBold,
-                            textAlign = TextAlign.End,
-                            color = displayColor,
-                            lineHeight = (displaySize.value * 1.1).sp
-                        )
                     }
                 }
 
-                // Buttons
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Row 1: Clear, Backspace, Divide
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "C",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleClear() },
-                            backgroundColor = Color(0xFFD32F2F),
-                            textColor = Color.White
-                        )
-                        CalculatorIconButton(
-                            icon = Icons.AutoMirrored.Filled.Backspace,
-                            contentDescription = "Backspace",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleBackspace() },
-                            backgroundColor = Color(0xFFD32F2F),
-                            tint = Color.White
-                        )
-                        CalculatorButton(
-                            text = "÷",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("÷") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "C", modifier = Modifier.weight(1f), onClick = { calculatorState.handleClear() }, backgroundColor = Color(0xFFD32F2F))
+                        CalculatorIconButton(icon = Icons.AutoMirrored.Filled.Backspace, contentDescription = "Backspace", modifier = Modifier.weight(1f), onClick = { calculatorState.handleBackspace() }, backgroundColor = Color(0xFFD32F2F))
+                        CalculatorButton(text = "÷", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("÷") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 2: 7, 8, 9, ├ù
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "7",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("7") }
-                        )
-                        CalculatorButton(
-                            text = "8",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("8") }
-                        )
-                        CalculatorButton(
-                            text = "9",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("9") }
-                        )
-                        CalculatorButton(
-                            text = "×",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("×") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "7", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("7") })
+                        CalculatorButton(text = "8", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("8") })
+                        CalculatorButton(text = "9", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("9") })
+                        CalculatorButton(text = "×", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("×") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 3: 4, 5, 6, -
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "4",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("4") }
-                        )
-                        CalculatorButton(
-                            text = "5",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("5") }
-                        )
-                        CalculatorButton(
-                            text = "6",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("6") }
-                        )
-                        CalculatorButton(
-                            text = "-",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("-") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "4", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("4") })
+                        CalculatorButton(text = "5", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("5") })
+                        CalculatorButton(text = "6", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("6") })
+                        CalculatorButton(text = "-", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("-") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 4: 1, 2, 3, +
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "1",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("1") }
-                        )
-                        CalculatorButton(
-                            text = "2",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("2") }
-                        )
-                        CalculatorButton(
-                            text = "3",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("3") }
-                        )
-                        CalculatorButton(
-                            text = "+",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("+") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "1", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("1") })
+                        CalculatorButton(text = "2", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("2") })
+                        CalculatorButton(text = "3", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("3") })
+                        CalculatorButton(text = "+", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("+") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 5: 0, Mic, ., =
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "0",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("0") }
-                        )
-                        CalculatorIconButton(
-                            icon = Icons.Default.Mic,
-                            contentDescription = "Mic message",
-                            modifier = Modifier.weight(1f),
-                            onClick = onVoiceInput,
-                            backgroundColor = Color(0xFF2196F3)
-                        )
-                        CalculatorButton(
-                            text = ".",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleDecimal() }
-                        )
-                        CalculatorButton(
-                            text = "=",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleEquals() },
-                            backgroundColor = Color(0xFF4CAF50),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "0", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("0") })
+                        CalculatorIconButton(icon = Icons.Default.Mic, contentDescription = "Mic", modifier = Modifier.weight(1f), onClick = onVoiceInput, backgroundColor = Color(0xFF2196F3))
+                        CalculatorButton(text = ".", modifier = Modifier.weight(1f), onClick = { calculatorState.handleDecimal() })
+                        CalculatorButton(text = "=", modifier = Modifier.weight(1f), onClick = { calculatorState.handleEquals() }, backgroundColor = Color(0xFF4CAF50))
                     }
                 }
             }
@@ -902,16 +584,8 @@ fun CalculatorScreen(calculatorState: CalculatorState, onVoiceInput: () -> Unit)
 @Composable
 fun CalculatorPreview() {
     SimpleCalculatorTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
-            // In preview, we provide a dummy state and onVoiceInput
-<<<<<<< Updated upstream
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             CalculatorScreen(rememberCalculatorState(), onVoiceInput = {}, onSpeakOut = {})
-=======
-            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {})
->>>>>>> Stashed changes
         }
     }
 }
