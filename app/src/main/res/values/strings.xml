@@ -1,4 +1,6 @@
 <resources>
     <string name="app_name">simpleCalculator</string>
     <string name="title_activity_history">History</string>
+    <string name="privacy_policy_title">Privacy Policy</string>
+    <string name="privacy_policy_content">Your privacy is important to us. This application does not collect or share any personal data. All calculations and history are stored locally on your device.</string>
 </resources>

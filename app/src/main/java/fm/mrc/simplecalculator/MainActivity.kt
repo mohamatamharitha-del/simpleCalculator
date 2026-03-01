@@ -14,7 +14,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
@@ -37,19 +37,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import fm.mrc.simplecalculator.database.AppDatabase
-import fm.mrc.simplecalculator.database.HistoryItem
-import fm.mrc.simplecalculator.database.HistoryRepository
+import fm.mrc.simplecalculator.R
 import fm.mrc.simplecalculator.ui.theme.SimpleCalculatorTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,57 +57,10 @@ import java.util.Locale
 import java.util.Stack
 import kotlin.random.Random
 
-object HistoryManager {
-    private const val HISTORY_KEY = "calculator_history"
-    private const val PREFS_NAME = "CalculatorPrefs"
-    private const val SEPARATOR = "|||"
 
-    private var repository: HistoryRepository? = null
-
-    fun getRepository(context: Context): HistoryRepository {
-        return repository ?: synchronized(this) {
-            val dao = AppDatabase.getDatabase(context).historyDao()
-            val repo = HistoryRepository(dao)
-            repository = repo
-            repo
-        }
-    }
-
-    suspend fun checkAndMigrate(context: Context) = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val historyString = prefs.getString(HISTORY_KEY, null)
-        if (historyString != null) {
-            val repo = getRepository(context)
-            val items = historyString.split(SEPARATOR).filter { it.isNotEmpty() }
-            items.forEach { item ->
-                val parts = item.split(";", limit = 2)
-                val timestamp = parts.getOrNull(0)?.toLongOrNull() ?: System.currentTimeMillis()
-                val calculation = parts.getOrNull(1) ?: item
-                repo.insert(HistoryItem(timestamp = timestamp, calculation = calculation))
-            }
-            prefs.edit { remove(HISTORY_KEY) }
-        }
-    }
-
-    suspend fun saveHistory(context: Context, calculation: String) = withContext(Dispatchers.IO) {
-        val repo = getRepository(context)
-        repo.insert(HistoryItem(timestamp = System.currentTimeMillis(), calculation = calculation))
-    }
-
-    suspend fun loadHistory(context: Context): List<String> = withContext(Dispatchers.IO) {
-        // This is now handled by Flow in ViewModel/State, but keeping for compatibility
-        emptyList()
-    }
-
-    suspend fun clearHistory(context: Context) = withContext(Dispatchers.IO) {
-        val repo = getRepository(context)
-        repo.deleteAll()
-    }
-}
 
 fun evaluateExpression(expression: String): Double {
     try {
-        // Strip trailing non-digit/parenthesis characters to handle partial expressions like "2+"
         val sanitizedExpression = expression.replace(Regex("[^0-9.]+$"), "")
         if (sanitizedExpression.isEmpty()) return 0.0
 
@@ -128,7 +79,7 @@ fun evaluateExpression(expression: String): Double {
                     if (values.size >= 2) {
                         values.push(applyOp(ops.pop(), values.pop(), values.pop()))
                     } else {
-                        ops.pop() // Discard invalid operator if stack insufficient
+                        ops.pop()
                     }
                 }
                 ops.push(token[0])
@@ -173,13 +124,11 @@ fun formatResult(result: Double): String {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private lateinit var calculatorState: CalculatorState
     private var tts: TextToSpeech? = null
 
-    private val speechRecognizerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        result ->
+    private val speechRecognizerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val data: Intent? = result.data
             val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
@@ -194,8 +143,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        isGranted: Boolean ->
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
         if (isGranted) {
             launchSpeechRecognizer()
         } else {
@@ -208,9 +156,10 @@ class MainActivity : ComponentActivity() {
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.ENGLISH
+            } else {
+                // Handle initialization failure if needed
             }
         }
-
         setContent {
             calculatorState = rememberCalculatorState()
             SimpleCalculatorTheme {
@@ -218,15 +167,22 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    var showPrivacyPolicy by remember { mutableStateOf(false) }
+
                     CalculatorScreen(
-                        calculatorState, 
+                        calculatorState,
                         onVoiceInput = {
                             requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                         },
                         onSpeakOut = { text ->
                             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
-                        }
+                        },
+                        onShowPrivacyPolicy = { showPrivacyPolicy = true }
                     )
+
+                    if (showPrivacyPolicy) {
+                        PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
+                    }
                 }
             }
         }
@@ -272,7 +228,7 @@ class MainActivity : ComponentActivity() {
         try {
             speechRecognizerLauncher.launch(intent)
         } catch (_: Exception) {
-            calculatorState.onVoiceRecognitionError(0) // Generic error
+            calculatorState.onVoiceRecognitionError(0)
         }
     }
 }
@@ -314,7 +270,7 @@ class CalculatorState(
     }
 
     fun reloadHistory() {
-        // History is now observed directly in the UI if needed, 
+        // History is now observed directly in the UI if needed,
         // or can be fetched if we maintain a local list.
         // For simplicity, we'll let HistoryActivity handle its own observation.
     }
@@ -335,13 +291,11 @@ class CalculatorState(
 
     fun handleOperator(op: String) {
         if (isResultShown) {
-            // Use the previous result from the expression "2+3=5" as the start of the new expression
             val lastResult = expression.split("=").lastOrNull() ?: "0"
             expression = lastResult
             isResultShown = false
         }
         if (expression.isNotEmpty() && expression.last().toString().matches(Regex("[+×÷-]"))) {
-
              expression = expression.dropLast(1)
         }
         expression += op
@@ -356,10 +310,8 @@ class CalculatorState(
         coroutineScope.launch {
             HistoryManager.saveHistory(context, calculationString)
         }
-
-        expression = calculationString 
-        display = resultString         
-
+        expression = calculationString
+        display = resultString
         isResultShown = true
     }
 
@@ -374,7 +326,6 @@ class CalculatorState(
              expression = "0"
              isResultShown = false
         }
-        // Check last number segment
         val lastNumber = expression.split(Regex("[+×÷-]")).lastOrNull() ?: ""
         if (!lastNumber.contains(".")) {
              if (expression.isEmpty()) expression = "0"
@@ -424,7 +375,7 @@ class CalculatorState(
     fun processVoiceInput(input: String) {
         var processed = input.lowercase(Locale.getDefault())
             .replace(":", "") // Handle 3:22 -> 322
-            
+
             // Multiplication
             .replace("multiplied by", "×")
             .replace("multiplied", "×")
@@ -435,7 +386,7 @@ class CalculatorState(
             .replace("product of", "×")
             .replace("x", "×")
             .replace("*", "×")
-            
+
             // Division
             .replace("divided by", "÷")
             .replace("divide by", "÷")
@@ -455,7 +406,7 @@ class CalculatorState(
             .replace("increased by", "+")
             .replace("total of", "+")
             .replace("bless", "+") // misrecognition of "plus"
-            
+
             // Subtraction
             .replace("minus", "-")
             .replace("mines", "-") // misrecognition of "minus"
@@ -481,9 +432,7 @@ class CalculatorState(
 
         // Strip extra spaces
         processed = processed.replace(Regex("\\s+"), "")
-
         expression = processed
-        isResultShown = false
         handleEquals()
     }
 }
@@ -496,10 +445,8 @@ fun CalculatorButton(
     backgroundColor: Color? = null,
     textColor: Color? = null
 ) {
-    val defaultBackgroundColor = Color(0xFF3C3C3C)
-    val defaultTextColor = Color.White
-    val buttonBgColor = backgroundColor ?: defaultBackgroundColor
-    val buttonTextColor = textColor ?: defaultTextColor
+    val buttonBgColor = backgroundColor ?: Color(0xFF3C3C3C)
+    val buttonTextColor = textColor ?: Color.White
     val view = LocalView.current
 
     Button(
@@ -509,24 +456,13 @@ fun CalculatorButton(
         },
         modifier = modifier.height(78.dp),
         shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = buttonBgColor
-        ),
-        elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 8.dp,
-            pressedElevation = 4.dp
-        )
+        colors = ButtonDefaults.buttonColors(containerColor = buttonBgColor),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 4.dp)
     ) {
-        Text(
-            text = text,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = buttonTextColor
-        )
+        Text(text = text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = buttonTextColor)
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CalculatorIconButton(
     icon: ImageVector,
@@ -536,55 +472,64 @@ fun CalculatorIconButton(
     backgroundColor: Color? = null,
     tint: Color? = null
 ) {
-    val defaultBackgroundColor = Color(0xFF3C3C3C)
-    val defaultTint = Color.White
-    val buttonBgColor = backgroundColor ?: defaultBackgroundColor
-    val iconTint = tint ?: defaultTint
+    val buttonBgColor = backgroundColor ?: Color(0xFF3C3C3C)
+    val iconTint = tint ?: Color.White
     val view = LocalView.current
 
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(contentDescription) } },
-        state = rememberTooltipState()
+    Button(
+        onClick = {
+            view.playSoundEffect(SoundEffectConstants.CLICK)
+            onClick()
+        },
+        modifier = modifier.height(78.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = buttonBgColor),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 4.dp)
     ) {
-        Button(
-            onClick = {
-                view.playSoundEffect(SoundEffectConstants.CLICK)
-                onClick()
-            },
-            modifier = modifier.height(78.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = buttonBgColor
-            ),
-            elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 4.dp
-            )
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = iconTint,
-                modifier = Modifier.size(26.dp)
-            )
-        }
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(26.dp))
     }
+}
+
+@Composable
+fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(id = R.string.privacy_policy_title)) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(text = stringResource(id = R.string.privacy_policy_content), fontSize = 14.sp, lineHeight = 20.sp)
+            }
+        },
+        confirmButton = {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { throw RuntimeException("Manual Test Crash triggered by user") }) {
+                    Text("Test Crash", color = Color(0xFFD32F2F))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+            }
+        },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = Color(0xFF2C2C2C),
+        titleContentColor = Color.White,
+        textContentColor = Color(0xFFB0B0B0),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CalculatorScreen(
-    calculatorState: CalculatorState, 
+    calculatorState: CalculatorState,
     onVoiceInput: () -> Unit,
-    onSpeakOut: (String) -> Unit
+    onSpeakOut: (String) -> Unit,
+    onShowPrivacyPolicy: () -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     val clipboardManager = LocalClipboardManager.current
     val haptic = LocalHapticFeedback.current
 
-    // Auto-scroll to bottom when expression or display changes
     LaunchedEffect(calculatorState.expression, calculatorState.display) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
@@ -592,7 +537,7 @@ fun CalculatorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
                             painter = painterResource(id = R.drawable.ic_custom_launcher),
@@ -605,14 +550,14 @@ fun CalculatorScreen(
                     }
                 },
                 actions = {
-                    TooltipBox(
-                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                        tooltip = { PlainTooltip { Text("History for calculator user") } },
-                        state = rememberTooltipState()
-                    ) {
-                        IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
-                            Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
-                        }
+                    IconButton(onClick = onShowPrivacyPolicy) {
+                        Icon(Icons.Default.Info, contentDescription = "Privacy Policy", tint = Color.White)
+                    }
+                    IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
+                        Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
+                    }
+                    IconButton(onClick = { onSpeakOut(calculatorState.display) }) {
+                        Icon(Icons.Default.VolumeUp, contentDescription = "Speak result", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -622,12 +567,12 @@ fun CalculatorScreen(
                 )
             )
         },
-    ) {
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF1C1C1C))
-                .padding(it)
+                .padding(padding)
         ) {
             Column(
                 modifier = Modifier
@@ -639,10 +584,21 @@ fun CalculatorScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1.2f)
+                        .weight(1.2f) // Increased weight for display area
                 ) {
                     Card(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .combinedClickable(
+                                onClick = {
+                                    // Regular click does nothing for now, or could copy expression
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    clipboardManager.setText(AnnotatedString(calculatorState.display))
+                                    Toast.makeText(context, "Result copied", Toast.LENGTH_SHORT).show()
+                                }
+                            ),
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = Color(0xFF2C2C2C)
@@ -662,10 +618,10 @@ fun CalculatorScreen(
                             val isResult = calculatorState.isResultShown
                             val expressionColor = if (isResult) Color(0xFFB0B0B0) else Color.White
                             val displayColor = if (isResult) Color.White else Color(0xFFB0B0B0)
-                            
+
                             // Local state to manage font size dynamically based on line count
                             var currentExpressionSize by remember { mutableStateOf(52.sp) }
-                            
+
                             // Reset size when expression is cleared or starts fresh
                             LaunchedEffect(calculatorState.expression) {
                                 if (calculatorState.expression.isEmpty()) {
@@ -696,46 +652,7 @@ fun CalculatorScreen(
                                 fontWeight = FontWeight.ExtraBold,
                                 textAlign = TextAlign.End,
                                 color = displayColor,
-                                lineHeight = (displaySize.value * 1.1).sp,
-                                modifier = Modifier.combinedClickable(
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        clipboardManager.setText(AnnotatedString(calculatorState.display))
-                                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    },
-                                    onClick = {}
-                                )
-                            )
-                        }
-                    }
-
-                    // Speak Out Button - Positioned at the top-right of the display card
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        contentAlignment = Alignment.TopEnd
-                    ) {
-                        IconButton(
-                            onClick = {
-                                val textToSpeak = if (calculatorState.isResultShown) {
-                                    "The result is ${calculatorState.display}"
-                                } else if (calculatorState.display != "0") {
-                                    calculatorState.display
-                                } else {
-                                    "Zero"
-                                }
-                                onSpeakOut(textToSpeak)
-                            },
-                            modifier = Modifier.size(48.dp),
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color(0xFF3C3C3C)
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Speak result",
-                                tint = Color.White
+                                lineHeight = (displaySize.value * 1.1).sp
                             )
                         }
                     }
@@ -774,123 +691,29 @@ fun CalculatorScreen(
                             textColor = Color.White
                         )
                     }
-
-                    // Row 2: 7, 8, 9, ×
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "7",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("7") }
-                        )
-                        CalculatorButton(
-                            text = "8",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("8") }
-                        )
-                        CalculatorButton(
-                            text = "9",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("9") }
-                        )
-                        CalculatorButton(
-                            text = "×",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("×") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "7", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("7") })
+                        CalculatorButton(text = "8", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("8") })
+                        CalculatorButton(text = "9", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("9") })
+                        CalculatorButton(text = "×", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("×") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 3: 4, 5, 6, -
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "4",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("4") }
-                        )
-                        CalculatorButton(
-                            text = "5",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("5") }
-                        )
-                        CalculatorButton(
-                            text = "6",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("6") }
-                        )
-                        CalculatorButton(
-                            text = "-",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("-") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "4", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("4") })
+                        CalculatorButton(text = "5", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("5") })
+                        CalculatorButton(text = "6", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("6") })
+                        CalculatorButton(text = "-", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("-") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 4: 1, 2, 3, +
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "1",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("1") }
-                        )
-                        CalculatorButton(
-                            text = "2",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("2") }
-                        )
-                        CalculatorButton(
-                            text = "3",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("3") }
-                        )
-                        CalculatorButton(
-                            text = "+",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleOperator("+") },
-                            backgroundColor = Color(0xFFFF9800),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "1", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("1") })
+                        CalculatorButton(text = "2", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("2") })
+                        CalculatorButton(text = "3", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("3") })
+                        CalculatorButton(text = "+", modifier = Modifier.weight(1f), onClick = { calculatorState.handleOperator("+") }, backgroundColor = Color(0xFFFF9800))
                     }
-
-                    // Row 5: 0, Mic, ., =
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CalculatorButton(
-                            text = "0",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleNumberInput("0") }
-                        )
-                        CalculatorIconButton(
-                            icon = Icons.Default.Mic,
-                            contentDescription = "Mic message",
-                            modifier = Modifier.weight(1f),
-                            onClick = onVoiceInput,
-                            backgroundColor = Color(0xFF2196F3)
-                        )
-                        CalculatorButton(
-                            text = ".",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleDecimal() }
-                        )
-                        CalculatorButton(
-                            text = "=",
-                            modifier = Modifier.weight(1f),
-                            onClick = { calculatorState.handleEquals() },
-                            backgroundColor = Color(0xFF4CAF50),
-                            textColor = Color.White
-                        )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CalculatorButton(text = "0", modifier = Modifier.weight(1f), onClick = { calculatorState.handleNumberInput("0") })
+                        CalculatorIconButton(icon = Icons.Default.Mic, contentDescription = "Mic", modifier = Modifier.weight(1f), onClick = onVoiceInput, backgroundColor = Color(0xFF2196F3))
+                        CalculatorButton(text = ".", modifier = Modifier.weight(1f), onClick = { calculatorState.handleDecimal() })
+                        CalculatorButton(text = "=", modifier = Modifier.weight(1f), onClick = { calculatorState.handleEquals() }, backgroundColor = Color(0xFF4CAF50))
                     }
                 }
             }
@@ -907,7 +730,7 @@ fun CalculatorPreview() {
             color = MaterialTheme.colorScheme.background
         ) {
             // In preview, we provide a dummy state and onVoiceInput
-            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {}, onSpeakOut = {})
+            CalculatorScreen(rememberCalculatorState(), onVoiceInput = {}, onSpeakOut = {}, onShowPrivacyPolicy = {})
         }
     }
 }
