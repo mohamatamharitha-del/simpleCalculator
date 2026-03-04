@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -433,6 +434,7 @@ class CalculatorState(
         // Strip extra spaces
         processed = processed.replace(Regex("\\s+"), "")
         expression = processed
+        isResultShown = false
         handleEquals()
     }
 }
@@ -501,13 +503,8 @@ fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { throw RuntimeException("Manual Test Crash triggered by user") }) {
-                    Text("Test Crash", color = Color(0xFFD32F2F))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Close")
-                }
+            TextButton(onClick = onDismiss) {
+                Text("Close")
             }
         },
         shape = RoundedCornerShape(24.dp),
@@ -555,9 +552,6 @@ fun CalculatorScreen(
                     }
                     IconButton(onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) }) {
                         Icon(Icons.Default.History, contentDescription = "History", tint = Color.White)
-                    }
-                    IconButton(onClick = { onSpeakOut(calculatorState.display) }) {
-                        Icon(Icons.Default.VolumeUp, contentDescription = "Speak result", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -655,6 +649,21 @@ fun CalculatorScreen(
                                 lineHeight = (displaySize.value * 1.1).sp
                             )
                         }
+                    }
+
+                    // Speaker icon at top-right side of the result box
+                    IconButton(
+                        onClick = { onSpeakOut(calculatorState.display) },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VolumeUp,
+                            contentDescription = "Speak result",
+                            tint = Color.White,
+                            modifier = Modifier.size(30.dp) // Increased size by ~25% (from 24dp default)
+                        )
                     }
                 }
 
